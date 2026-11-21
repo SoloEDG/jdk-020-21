@@ -1,5 +1,6 @@
 import type { Shift } from "../../../shared/types";
 import { occupiedFlight, compatibleStand } from "../lib/geometry";
+import { standReachable, networkFor } from "../../construction/lib/network";
 import { Aircraft } from "./Aircraft";
 interface Props {
   state: Shift;
@@ -8,6 +9,8 @@ interface Props {
 }
 export function ApronMap({ state, onStand, onFlight }: Props) {
   const selected = state.flights.find((f) => f.id === state.selectedFlightId);
+  const net = networkFor(state);
+  const layout = state.construction.layout;
   return (
     <section className="map-shell">
       <div className="map-toolbar">
@@ -49,6 +52,16 @@ export function ApronMap({ state, onStand, onFlight }: Props) {
           <filter id="shadow">
             <feDropShadow dx="0" dy="6" stdDeviation="6" floodOpacity=".13" />
           </filter>
+          <pattern
+            id="hazard"
+            width="14"
+            height="14"
+            patternUnits="userSpaceOnUse"
+            patternTransform="rotate(45)"
+          >
+            <rect width="14" height="14" fill="transparent" />
+            <rect width="6" height="14" fill="#e0a04c" fillOpacity=".35" />
+          </pattern>
         </defs>
         <rect width="940" height="660" fill="#c9cebd" />
         <rect width="940" height="660" fill="url(#grass)" />
@@ -116,14 +129,74 @@ export function ApronMap({ state, onStand, onFlight }: Props) {
             />
           </g>
         ))}
+        {/* 施工临时道路与已转正道路：车辆与地图共用同一份已生效布局 */}
+        {[...layout.temporaryRoads, ...layout.permanentRoads].map((r) => (
+          <polyline
+            key={r.id}
+            points={r.points.map((p) => `${p.x},${p.y}`).join(" ")}
+            fill="none"
+            stroke={r.temporary ? "#3d8a7e" : "#6f7d77"}
+            strokeWidth={r.temporary ? 5 : 3}
+            strokeDasharray={r.temporary ? "12 8" : undefined}
+            strokeLinecap="round"
+            opacity={0.85}
+          />
+        ))}
+        {/* 车辆实际行驶路线（沿路网绕行） */}
+        {state.vehicles
+          .filter((v) => v.path && (v.status === "travel" || v.status === "returning"))
+          .map((v) => (
+            <polyline
+              key={`route-${v.id}`}
+              points={v.path!.map((p) => `${p.x},${p.y}`).join(" ")}
+              fill="none"
+              stroke="#d98a3d"
+              strokeWidth="1.6"
+              strokeDasharray="6 5"
+              opacity="0.75"
+            />
+          ))}
+        {/* 施工封闭区域 */}
+        {layout.closedZones.map((z) => (
+          <g key={z.id} data-testid={`zone-${z.id}`}>
+            <rect
+              x={z.x}
+              y={z.y}
+              width={z.width}
+              height={z.height}
+              fill="#c9573f"
+              fillOpacity="0.18"
+              stroke="#c9573f"
+              strokeWidth="2.5"
+              strokeDasharray="10 7"
+            />
+            <rect
+              x={z.x}
+              y={z.y}
+              width={z.width}
+              height={z.height}
+              fill="url(#hazard)"
+              opacity="0.5"
+            />
+            <text
+              x={z.x + z.width / 2}
+              y={z.y + 18}
+              textAnchor="middle"
+              className="zone-label"
+            >
+              施工封闭区
+            </text>
+          </g>
+        ))}
         {state.stands.map((stand) => {
           const f = occupiedFlight(state, stand.id),
             active = state.selectedStandId === stand.id;
           const compatible = selected && compatibleStand(stand, selected);
+          const reachable = standReachable(net, stand.id);
           return (
             <g
               key={stand.id}
-              className="stand-group"
+              className={`stand-group ${reachable ? "" : "stand-sealed"}`}
               role="button"
               tabIndex={0}
               aria-label={`机位 ${stand.id}`}
@@ -142,12 +215,38 @@ export function ApronMap({ state, onStand, onFlight }: Props) {
                 width="164"
                 height="155"
                 rx="11"
-                fill={active ? "#efc78c" : f ? "#c3ccbf" : "#cfd3c4"}
-                fillOpacity={active ? 0.42 : 0.25}
-                stroke={active ? "#cf7b3c" : f ? "#99ac9c" : "#b2b9a7"}
-                strokeWidth={active ? 2 : 1}
-                strokeDasharray={f ? undefined : "5 5"}
+                fill={
+                  !reachable
+                    ? "#c9573f"
+                    : active
+                      ? "#efc78c"
+                      : f
+                        ? "#c3ccbf"
+                        : "#cfd3c4"
+                }
+                fillOpacity={!reachable ? 0.22 : active ? 0.42 : 0.25}
+                stroke={
+                  !reachable
+                    ? "#c9573f"
+                    : active
+                      ? "#cf7b3c"
+                      : f
+                        ? "#99ac9c"
+                        : "#b2b9a7"
+                }
+                strokeWidth={active || !reachable ? 2 : 1}
+                strokeDasharray={f && reachable ? undefined : "5 5"}
               />
+              {!reachable && (
+                <text
+                  x={stand.x}
+                  y={stand.y - 62}
+                  textAnchor="middle"
+                  className="seal-text"
+                >
+                  施工暂停使用
+                </text>
+              )}
               <path
                 d={`M${stand.x} ${stand.y + 79}V${stand.y - 48}M${stand.x - 15} ${stand.y - 48}H${stand.x + 15}`}
                 fill="none"
@@ -199,14 +298,17 @@ export function ApronMap({ state, onStand, onFlight }: Props) {
                   {f.id}
                 </text>
               )}
-              {!f && selected?.status === "incoming" && compatible && (
-                <circle
-                  cx={stand.x + 67}
-                  cy={stand.y - 65}
-                  r="4"
-                  fill="#639b84"
-                />
-              )}
+              {!f &&
+                selected?.status === "incoming" &&
+                compatible &&
+                reachable && (
+                  <circle
+                    cx={stand.x + 67}
+                    cy={stand.y - 65}
+                    r="4"
+                    fill="#639b84"
+                  />
+                )}
             </g>
           );
         })}
@@ -294,6 +396,14 @@ export function ApronMap({ state, onStand, onFlight }: Props) {
         <span>
           <i className="legend-selected" />
           当前选择
+        </span>
+        <span>
+          <i className="legend-zone" />
+          施工封闭
+        </span>
+        <span>
+          <i className="legend-bypass" />
+          临时通道
         </span>
         <span className="map-scale">0 ━━━━━ 100 m</span>
       </div>

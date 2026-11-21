@@ -3,17 +3,24 @@ import { initialFlights } from "../../flights";
 import { initialStands } from "../../apron";
 import { initialServices } from "../../services";
 import { initialVehicles } from "../../fleet";
+import { initialConstruction } from "../../construction/model/phases";
 export function createShift(): Shift {
   const flights = initialFlights();
+  const stands = initialStands();
+  const construction = initialConstruction();
+  // 机位身份轨迹基线：新班次即记录各机位初始坐标，后续移动据此追溯同一机位
+  for (const stand of stands) {
+    construction.layout.standHistory[stand.id] = [{ x: stand.x, y: stand.y }];
+  }
   return {
-    version: 1,
+    version: 2,
     time: 0,
     paused: false,
     speed: 1,
     score: 0,
     conflicts: 0,
     flights,
-    stands: initialStands(),
+    stands,
     services: initialServices(flights),
     vehicles: initialVehicles(),
     events: [
@@ -21,5 +28,6 @@ export function createShift(): Shift {
     ],
     selectedFlightId: "MU2451",
     nextEventId: 1,
+    construction,
   };
 }

@@ -1,6 +1,7 @@
 import type { Shift } from "../../../shared/types";
 import { copyShift, record } from "../../../shared/document";
 import { flightReady } from "../lib/readiness";
+import { dispatchReachable } from "../../construction/model/commands";
 export function assignStand(state: Shift, id: string, standId: string): Shift {
   const s = copyShift(state),
     f = s.flights.find((x) => x.id === id),
@@ -17,6 +18,13 @@ export function assignStand(state: Shift, id: string, standId: string): Shift {
     s.conflicts++;
     s.score -= 10;
     record(s, "机位指令冲突：请检查尺寸、占用与航班状态", "warning");
+    return s;
+  }
+  // 施工期间：封闭隔离、路网不可达的机位不能接纳新航班
+  if (!dispatchReachable(s, standId)) {
+    s.conflicts++;
+    s.score -= 10;
+    record(s, `机位 ${standId} 正在施工或道路封闭，无法接纳航班`, "warning");
     return s;
   }
   f.standId = standId;

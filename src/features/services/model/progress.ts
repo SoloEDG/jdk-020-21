@@ -1,6 +1,7 @@
 import type { Shift } from "../../../shared/types";
 import { copyShift, record } from "../../../shared/document";
 import { serviceCatalog } from "./catalog";
+import { returnRouteFor } from "../../construction/model/commands";
 export function advanceServices(state: Shift, seconds: number): Shift {
   const s = copyShift(state);
   for (const task of s.services) {
@@ -17,7 +18,15 @@ export function advanceServices(state: Shift, seconds: number): Shift {
         v.origin = { ...v.position };
         v.target = { x: 830, y: 480 };
         v.progress = 0;
-        v.tripDuration = 10;
+        // 施工可能已改变回程路线：基于当前布局重新规划，失败则保留直线兜底
+        const back = returnRouteFor(s, v);
+        if (back) {
+          v.path = back.path;
+          v.tripDuration = back.duration;
+        } else {
+          v.path = undefined;
+          v.tripDuration = 10;
+        }
       }
       record(
         s,

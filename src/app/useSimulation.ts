@@ -3,6 +3,7 @@ import type { Shift } from "../shared/types";
 import { advanceClock, createShift } from "../features/session";
 import { advanceFleet } from "../features/fleet";
 import { advanceServices } from "../features/services";
+import { advanceConstruction } from "../features/construction/model/commands";
 export function useSimulation() {
   const [state, setState] = useState<Shift>(createShift);
   useEffect(() => {
@@ -14,7 +15,11 @@ export function useSimulation() {
       setState((s) => {
         if (s.paused) return s;
         const dt = elapsed * s.speed;
-        return advanceServices(advanceFleet(advanceClock(s, dt), dt), dt);
+        // 施工推进放在最前：本 tick 完工的布局变化立即被车辆与保障逻辑使用
+        return advanceServices(
+          advanceFleet(advanceConstruction(advanceClock(s, dt), dt), dt),
+          dt,
+        );
       });
     }, 100);
     return () => clearInterval(id);

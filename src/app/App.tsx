@@ -3,6 +3,7 @@ import { FlightBoard, assignStand, selectFlight } from "../features/flights";
 import { ApronMap, selectStand } from "../features/apron";
 import { FleetPanel, selectVehicle } from "../features/fleet";
 import { dispatchService } from "../features/services";
+import { ConstructionPanel } from "../features/construction";
 import {
   SessionBar,
   ScoreStrip,
@@ -75,6 +76,7 @@ export function App() {
               state={state}
               onSelect={(id) => setState((s) => selectVehicle(s, id))}
             />
+            <ConstructionPanel state={state} onChange={setState} />
           </div>
           <Inspector
             state={state}
